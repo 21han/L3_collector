@@ -166,13 +166,82 @@ parser.add_argument("--symbol", required=True, type=str, help="Format: {base ass
 parser.add_argument("--data_dir", type=str, help="local data directory path", default="./data/")
 ```
 
-
 ## Data Quality Check
 
 The data quality check is a completely independent process from the scraper. The advantage of this set-up is such that 
 data quality check has zero interference with the scraper. (i.e. if data quality check process fails, it will not affect
 the scraper or data collector in any ways and thereby adding robustness to the pipeline). In addition, we have added
 slack integration (and PagerDuty possibly in the future) to further enhance any data quality issues we catch.
+
+Due to time constraint, `qa` checks have not yet been implemented. However, below are what we could check in the parsed data:
+
+* does the number of rows in the data file fall within our expectation range? (E.g. between 860000 to 120000 records)
+* do we have any empty rows?
+* do we have any missing values in each row?
+* for every column, do we have an ill-formatted value? (e.g. negative price value or ill formatted date)
+* generate aggregated statistics (similar to [`pandas.DataFrame().describe()`](https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.describe.html)) and send results to proper communication channel.
+
+
+
+## Cron Job Set-Up
+
+We set up the pipeline in the following way:
+
+1. run the scraper process in forever mode.
+2. run data quality check every 30 minutes before syncing data to remote s3 bucket location
+3. if step 2's data quality check fails, send out slack/telegram notification promptly. (ideally integrate with PagerDuty)
+
+Cron job is ancient and difficult to maintain. A much better tool to schedule job is [Airflow](https://airflow.apache.org/)
+
+In Airflow, everything is scheduled in a [DAG](https://airflow.apache.org/docs/apache-airflow/stable/concepts.html#:~:text=In%20Airflow%2C%20a%20DAG%20%2D%2D,and%20their%20dependencies)%20as%20code.).
+Dags are then broken down into [operators](https://airflow.apache.org/docs/apache-airflow/stable/_api/airflow/operators/index.html). 
+
+Therefore, we can perfectly schedule and control the workflow using three operators in a single DAG to achieve the above.
+
+This allows much smoother control of the job. It is just like cron, but much more advanced and easy to use.
+
+The best part is it is completely Python-native. Most top hedge fund (including Citadel) along with tech giants use Airflow
+to orchestrate their jobs. Therefore, we should do the same. However, before airflow is being set-up, below is a snapshot 
+of cronjob set-up that we can use to perform (1) data collection (2) qa check (3) failure alerts (4) data persistence to S3 and corresponding data warehouses.
+
+```bash
+* * * * * /usr/bin/flock -w 0 /path/to/cron.lock ./start_collection_process.sh
+*/10 * * * * ./qa_and_sync.sh
+```
+
+[Flock](https://ma.ttias.be/prevent-cronjobs-from-overlapping-in-linux/#:~:text=Flock%20is%20a%20very%20interesting,the%20cronjob%20won't%20start.)
+effectively avoids running overlapping jobs by make sure a script/app isn't already running.
+
+>If the lock exists, the cronjob won’t start. If the lock doesn’t exist, it’s safe to launch the cron.
+
+comment: in production, we will likely remove `--symbol` flag and change to subscribe to all symbols instead or symbols in 
+our trading universe.
+
+```bash
+# start_collection_process.sh
+# start data collection 
+source .cred  # store any credntial if there are any
+python -m src.collect --exchange binance --symbol BTCUSDT --data_type book  &
+python -m src.collect <command 2> &
+python -m src.collect <command 3> &
+# <...>
+python -m src.collect <command N> &
+
+# & will let commands run in background
+```
+
+```bash
+# qa_and_sync.sh
+
+# data sync bash script
+
+source .cred  # store aws credential along with other environment variablese her
+python -m src.qa && aws s3 sync <root-path>/data s3://injective-s3-bucket/data  --exclude "*" --include "*.gz"  
+
+# note: sync compressed data from local directory to remote s3 bucket  
+# note: s3 sync will not delete any objects in destination by default. It only adds any new or newly modified files to destination.
+
+```
 
 
 ## ETL Workflow
@@ -232,5 +301,4 @@ In addition, we can set up alerts on newly added trading pairs to Coinbase or Bi
 
 [3] [Binance Official Guide on Managing Local Orderbook Correctly](https://github.com/binance/binance-spot-api-docs/blob/master/web-socket-streams.md#all-market-tickers-stream)
 
-
-
+[4] [flock](https://ma.ttias.be/prevent-cronjobs-from-overlapping-in-linux/#:~:text=Flock%20is%20a%20very%20interesting,the%20cronjob%20won't%20start.)
