@@ -193,7 +193,7 @@ We set up the pipeline in the following way:
 
 Cron job is ancient and difficult to maintain. A much better tool to schedule job is [Airflow](https://airflow.apache.org/)
 
-In Airflow, everything is scheduled in a [DAG](https://airflow.apache.org/docs/apache-airflow/stable/concepts.html#:~:text=In%20Airflow%2C%20a%20DAG%20%2D%2D,and%20their%20dependencies)%20as%20code.).
+In Airflow, everything is scheduled in a [DAG](https://airflow.apache.org/docs/apache-airflow/stable/concepts.html#:~:text=In%20Airflow%2C%20a%20DAG%20%2D%2D,and%20their%20dependencies).
 Dags are then broken down into [operators](https://airflow.apache.org/docs/apache-airflow/stable/_api/airflow/operators/index.html). 
 
 Therefore, we can perfectly schedule and control the workflow using three operators in a single DAG to achieve the above.
