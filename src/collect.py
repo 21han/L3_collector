@@ -49,15 +49,17 @@ async def binance_tick_trade_data():
         """
         raw_data_logger.info(msg)
         # e: trade, E: event time, s: symbol, t: Trade ID, p: Price, q: Quantity, T: trade time, m: mm or not
-        # TODO add try and catch logic here
 
         # note: difference between event time and trade time
         # https://stackoverflow.com/questions/50688471/binance-event-time-vs-trade-time
+        try:
+            parsed_msg = f"{msg['E']},{msg['s']},{msg['t']},{msg['p']},{msg['q']}," \
+                         f"{msg['T']},{msg['m']}"
 
-        parsed_msg = f"{msg['E']},{msg['s']},{msg['t']},{msg['p']},{msg['q']}," \
-                     f"{msg['T']},{msg['m']}"
-
-        data_logger.info(parsed_msg)
+            data_logger.info(parsed_msg)
+        except Exception as e:
+            logger.error(e)
+            # send alerts to slack / telegram + PagerDuty
 
     client = await AsyncClient.create()
     bsm = BinanceSocketManager(client)
@@ -79,7 +81,7 @@ async def binance_order_book_snapshot():
     dcm = DepthCacheManager(client, symbol)
     raw_data_logger = logger.bind(task=f"{task_name}_raw")
     data_logger = logger.bind(task=task_name)
-    depth = 5  # TODO add this to config.json
+    depth = 5
 
     async with dcm as dcm_socket:
         while True:
@@ -96,24 +98,27 @@ async def binance_order_book_snapshot():
                 'depth': depth
             }
             raw_data_logger.info(msg)
-            # TODO: add try and catch logic here
-            parsed_data = ""
-            for i in range(depth):
-                bid_msg = f"{update_time}," \
-                          f"{symbol}," \
-                          f"B," \
-                          f"{bids[i][0]}," \
-                          f"{bids[i][1]}," \
-                          f"{i + 1}"
-                ask_msg = f"{update_time}," \
-                          f"{symbol}," \
-                          f"A," \
-                          f"{asks[i][0]}," \
-                          f"{asks[i][1]}," \
-                          f"{i + 1}"
-                parsed_data += f"\n{bid_msg}\n{ask_msg}"
+            try:
+                parsed_data = ""
+                for i in range(depth):
+                    bid_msg = f"{update_time}," \
+                              f"{symbol}," \
+                              f"B," \
+                              f"{bids[i][0]}," \
+                              f"{bids[i][1]}," \
+                              f"{i + 1}"
+                    ask_msg = f"{update_time}," \
+                              f"{symbol}," \
+                              f"A," \
+                              f"{asks[i][0]}," \
+                              f"{asks[i][1]}," \
+                              f"{i + 1}"
+                    parsed_data += f"\n{bid_msg}\n{ask_msg}"
 
-            data_logger.info(parsed_data.strip())
+                data_logger.info(parsed_data.strip())
+            except Exception as e:
+                logger.error(e)
+                # send alerts to slack / telegram + PagerDuty
 
 
 async def collect_binance():
@@ -157,15 +162,19 @@ def coinbase_tick_trade_data():
         def on_message(self, msg):
             if msg['type'] == 'match':
                 raw_data_logger.info(msg)
-                trade_time = parse_z_str_to_dt(msg['time'])
-                trade_time_in_millis = unix_time_millis(trade_time)
-                data_logger.info(f"{round(time.time() * 1000)},"  # socket time
-                                 f"{msg['product_id']},"  # e.g. BTC-USD
-                                 f"{msg['trade_id']},"
-                                 f"{msg['price']},"
-                                 f"{msg['size']},"  # quantity
-                                 f"{trade_time_in_millis},"
-                                 f"{True if msg['side'] == 'buy' else False}")  # is the Buyer the market maker?
+                try:
+                    trade_time = parse_z_str_to_dt(msg['time'])
+                    trade_time_in_millis = unix_time_millis(trade_time)
+                    data_logger.info(f"{round(time.time() * 1000)},"  # socket time
+                                     f"{msg['product_id']},"  # e.g. BTC-USD
+                                     f"{msg['trade_id']},"
+                                     f"{msg['price']},"
+                                     f"{msg['size']},"  # quantity
+                                     f"{trade_time_in_millis},"
+                                     f"{True if msg['side'] == 'buy' else False}")  # is the Buyer the market maker?
+                except Exception as e:
+                    logger.error(e)
+                    # send alerts to slack / telegram + PagerDuty
 
     channel = Channel('matches', symbol)
     ws = CoinbaseClient(loop, channel)
@@ -196,60 +205,63 @@ def coinbase_order_book_snapshot():
         def on_message(self, msg):
             if "type" in msg and msg['type'] == "l2update":
                 raw_data_logger.info(msg)
-
-                # parse L2 updates
-                change = msg['changes']
-                if change[0][0] == 'buy':
-                    # dedup
-                    self.depth_cache['B'] = [i for i in self.depth_cache['B'] if i[0] != float(change[0][1])]
-                    self.depth_cache['B'].append(
-                        (
-                            float(change[0][1]),  # price
-                            float(change[0][2])   # quantity
+                try:
+                    # parse L2 updates
+                    change = msg['changes']
+                    if change[0][0] == 'buy':
+                        # dedup
+                        self.depth_cache['B'] = [i for i in self.depth_cache['B'] if i[0] != float(change[0][1])]
+                        self.depth_cache['B'].append(
+                            (
+                                float(change[0][1]),  # price
+                                float(change[0][2])   # quantity
+                            )
                         )
-                    )
-                elif change[0][0] == 'sell':
-                    # dedup
-                    self.depth_cache['A'] = [i for i in self.depth_cache['A'] if i[0] != float(change[0][1])]
-                    self.depth_cache['A'].append(
-                        (
-                            float(change[0][1]),  # price
-                            float(change[0][2])   # quantity
+                    elif change[0][0] == 'sell':
+                        # dedup
+                        self.depth_cache['A'] = [i for i in self.depth_cache['A'] if i[0] != float(change[0][1])]
+                        self.depth_cache['A'].append(
+                            (
+                                float(change[0][1]),  # price
+                                float(change[0][2])   # quantity
+                            )
                         )
-                    )
-                else:
-                    logger.error(f"invalid record: {msg}")
+                    else:
+                        logger.error(f"invalid record: {msg}")
 
-                self.depth_cache['A'] = [r for r in self.depth_cache['A'] if r[1] != 0]
-                self.depth_cache['A'].sort(key=lambda r: r[0], reverse=False)
-                self.depth_cache['A'] = self.depth_cache['A'][:self.depth*self.elastic_ratio]
+                    self.depth_cache['A'] = [r for r in self.depth_cache['A'] if r[1] != 0]
+                    self.depth_cache['A'].sort(key=lambda r: r[0], reverse=False)
+                    self.depth_cache['A'] = self.depth_cache['A'][:self.depth*self.elastic_ratio]
 
-                self.depth_cache['B'] = [r for r in self.depth_cache['B'] if r[1] != 0]
-                self.depth_cache['B'].sort(key=lambda r: r[0], reverse=True)
-                self.depth_cache['B'] = self.depth_cache['A'][:self.depth*self.elastic_ratio]
+                    self.depth_cache['B'] = [r for r in self.depth_cache['B'] if r[1] != 0]
+                    self.depth_cache['B'].sort(key=lambda r: r[0], reverse=True)
+                    self.depth_cache['B'] = self.depth_cache['B'][:self.depth*self.elastic_ratio]
 
-                msg_dt = parse_z_str_to_dt(msg['time'])
-                msg_mili = unix_time_millis(msg_dt)
+                    msg_dt = parse_z_str_to_dt(msg['time'])
+                    msg_mili = unix_time_millis(msg_dt)
 
-                if len(self.depth_cache['A']) >= 5 and len(self.depth_cache['B']) >= 5 \
-                        and msg_mili % 1000 == 0:
-                    parsed_data = ""
-                    for i in range(self.depth):
-                        bid_msg = f"{msg_mili}," \
-                                  f"{msg['product_id']}," \
-                                  f"B," \
-                                  f"{self.depth_cache['B'][i][0]}," \
-                                  f"{self.depth_cache['B'][i][1]}," \
-                                  f"{i + 1}"
-                        ask_msg = f"{msg_mili}," \
-                                  f"{msg['product_id']}," \
-                                  f"A," \
-                                  f"{self.depth_cache['A'][i][0]}," \
-                                  f"{self.depth_cache['A'][i][1]}," \
-                                  f"{i + 1}"
-                        parsed_data += f"\n{bid_msg}\n{ask_msg}"
+                    if len(self.depth_cache['A']) >= 5 and len(self.depth_cache['B']) >= 5 \
+                            and msg_mili % 1000 == 0:
+                        parsed_data = ""
+                        for i in range(self.depth):
+                            bid_msg = f"{msg_mili}," \
+                                      f"{msg['product_id']}," \
+                                      f"B," \
+                                      f"{self.depth_cache['B'][i][0]}," \
+                                      f"{self.depth_cache['B'][i][1]}," \
+                                      f"{i + 1}"
+                            ask_msg = f"{msg_mili}," \
+                                      f"{msg['product_id']}," \
+                                      f"A," \
+                                      f"{self.depth_cache['A'][i][0]}," \
+                                      f"{self.depth_cache['A'][i][1]}," \
+                                      f"{i + 1}"
+                            parsed_data += f"\n{bid_msg}\n{ask_msg}"
 
-                    data_logger.info(parsed_data.strip())
+                        data_logger.info(parsed_data.strip())
+                except Exception as e:
+                    logger.error(e)
+                    # send alerts to slack / telegram + PagerDuty
 
     # channel description: https://docs.pro.coinbase.com/#the-level2-channel
     channel = Channel('level2', symbol)
