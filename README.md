@@ -177,7 +177,7 @@ slack integration (and PagerDuty possibly in the future) to further enhance any 
 
 ## ETL Workflow
 
-- TODO: add in draw.io chart
+![]()
 
 ## Failure Prevention
 

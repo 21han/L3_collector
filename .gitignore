@@ -131,6 +131,9 @@ dmypy.json
 # Idea
 .idea/
 
-# ignore csv
+# ignore csv, txt
 *.csv
 *.txt
+
+# mac
+.DS_Store
