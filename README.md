@@ -177,7 +177,7 @@ slack integration (and PagerDuty possibly in the future) to further enhance any 
 
 ## ETL Workflow
 
-![]()
+![](https://github.com/gzhami/L3_collector/blob/main/resource/sys_design.png)
 
 ## Failure Prevention
 
